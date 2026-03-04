@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>专业K线图表</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --border-color: #333333;
+            --text-color: #cccccc;
+            --up-color: #ff3333;
+            --down-color: #00cc00;
+            --flat-color: #ffffff;
+            --highlight-color: #ffff00;
+            --header-bg: #111111;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-size: 12px;
+        }
+
+        /* 顶部工具栏 */
+        .top-bar {
+            height: 30px;
+            background-color: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+
+        .period-list {
+            display: flex;
+            gap: 10px;
+        }
+
+        .period-item {
+            cursor: pointer;
+            padding: 2px 5px;
+        }
+
+        .period-item:hover, .period-item.active {
+            color: var(--highlight-color);
+            background-color: #333;
+        }
+
+        .toolbar-right {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            background: #333;
+            border: 1px solid #555;
+            color: #eee;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn:hover {
+            border-color: #888;
+        }
+
+        /* 主体区域 */
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧图表区 */
+        .chart-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chart-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 右侧侧边栏 */
+        .sidebar {
+            width: 240px;
+            border-left: 1px solid var(--border-color);
+            background-color: #050505;
+            display: flex;
+            flex-direction: column;
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        .sidebar-section {
+            padding: 5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .stock-header {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--highlight-color);
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* 五档盘口 */
+        .order-book {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .order-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .order-label {
+            color: #aaa;
+        }
+
+        /* 基础行情 */
+        .market-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 10px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .info-label {
+            color: #aaa;
+        }
+
+        /* 分时成交 */
+        .tick-list {
+            flex: 1;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        .tick-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px;
+            border-bottom: 1px solid #222;
+            color: #aaa;
+        }
+
+        .tick-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 5px;
+        }
+
+        /* 颜色辅助类 */
+        .red { color: var(--up-color); }
+        .green { color: var(--down-color); }
+        .white { color: var(--flat-color); }
+        .yellow { color: var(--highlight-color); }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+        }
+        
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部菜单 -->
+    <div class="top-bar">
+        <div class="period-list">
+            <div class="period-item">分时</div>
+            <div class="period-item">1分钟</div>
+            <div class="period-item">5分钟</div>
+            <div class="period-item">15分钟</div>
+            <div class="period-item">30分钟</div>
+            <div class="period-item">60分钟</div>
+            <div class="period-item active">日线</div>
+            <div class="period-item">周线</div>
+            <div class="period-item">月线</div>
+        </div>
+        <div class="toolbar-right">
+            <span id="file-info" style="color: #888;">未加载文件</span>
+            <button class="btn" onclick="document.getElementById('fileInput').click()">导入数据</button>
+            <input type="file" id="fileInput" accept=".xlsx, .xls" style="display: none" onchange="handleFileUpload(this)">
+        </div>
+    </div>
+
+    <!-- 主体内容 -->
+    <div class="main-container">
+        <!-- 左侧图表 -->
+        <div class="chart-wrapper">
+            <div id="chart-container"></div>
+        </div>
+
+        <!-- 右侧侧边栏 -->
+        <div class="sidebar">
+            <!-- 股票名称代码 -->
+            <div class="sidebar-section">
+                <div class="stock-header">
+                    <span id="stock-code">000000</span>
+                    <span id="stock-name">示例股票</span>
+                </div>
+            </div>
+
+            <!-- 五档盘口 (模拟) -->
+            <div class="sidebar-section order-book">
+                <div class="order-row"><span class="order-label">卖五</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">卖四</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">卖三</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">卖二</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">卖一</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div style="height: 5px; border-bottom: 1px dashed #333; margin: 2px 0;"></div>
+                <div class="order-row"><span class="order-label">买一</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">买二</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">买三</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">买四</span><span class="red">--</span><span class="yellow">--</span></div>
+                <div class="order-row"><span class="order-label">买五</span><span class="red">--</span><span class="yellow">--</span></div>
+            </div>
+
+            <!-- 基础行情 -->
+            <div class="sidebar-section market-info">
+                <div class="info-row"><span class="order-label">现价</span><span id="info-price" class="white">--</span></div>
+                <div class="info-row"><span class="order-label">今开</span><span id="info-open" class="white">--</span></div>
+                
+                <div class="info-row"><span class="order-label">涨跌</span><span id="info-change" class="white">--</span></div>
+                <div class="info-row"><span class="order-label">最高</span><span id="info-high" class="white">--</span></div>
+                
+                <div class="info-row"><span class="order-label">涨幅</span><span id="info-pct" class="white">--</span></div>
+                <div class="info-row"><span class="order-label">最低</span><span id="info-low" class="white">--</span></div>
+                
+                <div class="info-row"><span class="order-label">总量</span><span id="info-vol" class="yellow">--</span></div>
+                <div class="info-row"><span class="order-label">量比</span><span class="white">--</span></div>
+                
+                <div class="info-row"><span class="order-label">外盘</span><span class="red">--</span></div>
+                <div class="info-row"><span class="order-label">内盘</span><span class="green">--</span></div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="info-row"><span class="order-label">换手</span><span class="white">--%</span></div>
+                <div class="info-row"><span class="order-label">净资</span><span class="white">--</span></div>
+                <div class="info-row"><span class="order-label">收益</span><span class="white">--</span></div>
+            </div>
+
+            <!-- 分时成交 (模拟) -->
+            <div class="tick-header">
+                <span>时间</span><span>价格</span><span>现量</span>
+            </div>
+            <div class="tick-list" id="tick-list">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">正在处理数据...</div>
+
+    <script>
+        let myChart = null;
+        let rawData = null;
+
+        // 初始化图表
+        function initChart() {
+            const dom = document.getElementById('chart-container');
+            if (myChart) {
+                myChart.dispose();
+            }
+            myChart = echarts.init(dom, 'dark'); // 强制深色主题
+            window.onresize = function() {
+                myChart.resize();
+            };
+        }
+
+        // 处理文件上传
+        function handleFileUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            document.getElementById('file-info').innerText = file.name;
+            document.getElementById('loading').style.display = 'block';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+                    
+                    if (jsonData.length < 2) {
+                        alert('数据为空或格式不正确');
+                        return;
+                    }
+
+                    rawData = processData(jsonData);
+                    renderChart(rawData);
+                    updateSidebar(rawData);
+                } catch (error) {
+                    console.error(error);
+                    alert('读取文件失败，请检查文件格式');
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                    input.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 数据处理
+        function processData(data) {
+            const header = data[0];
+            const colMap = {
+                code: -1,
+                name: -1,
+                time: -1,
+                open: -1,
+                high: -1,
+                low: -1,
+                close: -1,
+                vol: -1
+            };
+
+            header.forEach((col, index) => {
+                if (!col) return;
+                const name = String(col).trim();
+                if (name.includes('时间')) colMap.time = index;
+                else if (name.includes('开盘')) colMap.open = index;
+                else if (name.includes('最高')) colMap.high = index;
+                else if (name.includes('最低')) colMap.low = index;
+                else if (name.includes('收盘')) colMap.close = index;
+                else if (name.includes('成交量')) colMap.vol = index;
+                else if (name.includes('代码')) colMap.code = index;
+                else if (name.includes('名称')) colMap.name = index;
+            });
+
+            if (colMap.time === -1) colMap.time = 2;
+            if (colMap.open === -1) colMap.open = 3;
+            if (colMap.high === -1) colMap.high = 4;
+            if (colMap.low === -1) colMap.low = 5;
+            if (colMap.close === -1) colMap.close = 6;
+            if (colMap.vol === -1) colMap.vol = 9;
+            if (colMap.code === -1) colMap.code = 0;
+            if (colMap.name === -1) colMap.name = 1;
+
+            const categoryData = [];
+            const values = [];
+            const volumes = [];
+            let stockCode = '000000';
+            let stockName = '未知股票';
+
+            for (let i = 1; i < data.length; i++) {
+                const row = data[i];
+                if (!row || row.length === 0) continue;
+
+                // 获取股票信息（取第一行有效数据）
+                if (i === 1) {
+                    if (row[colMap.code]) stockCode = row[colMap.code];
+                    if (row[colMap.name]) stockName = row[colMap.name];
+                }
+
+                let timeStr = row[colMap.time];
+                if (typeof timeStr === 'number') {
+                    const date = new Date((timeStr - 25569) * 86400 * 1000);
+                    timeStr = formatDate(date);
+                }
+
+                if (!timeStr) continue;
+
+                categoryData.push(timeStr);
+
+                const open = parseFloat(row[colMap.open]);
+                const close = parseFloat(row[colMap.close]);
+                const low = parseFloat(row[colMap.low]);
+                const high = parseFloat(row[colMap.high]);
+                const vol = parseFloat(row[colMap.vol]);
+
+                values.push([open, close, low, high]);
+                volumes.push([i - 1, vol, close > open ? 1 : -1]);
+            }
+
+            return {
+                categoryData,
+                values,
+                volumes,
+                stockCode,
+                stockName
+            };
+        }
+
+        function formatDate(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}/${m}/${d}`;
+        }
+
+        function calculateMA(dayCount, data) {
+            var result = [];
+            for (var i = 0, len = data.values.length; i < len; i++) {
+                if (i < dayCount) {
+                    result.push('-');
+                    continue;
+                }
+                var sum = 0;
+                for (var j = 0; j < dayCount; j++) {
+                    sum += data.values[i - j][1];
+                }
+                result.push(+(sum / dayCount).toFixed(3));
+            }
+            return result;
+        }
+
+        // 更新侧边栏数据
+        function updateSidebar(data) {
+            if (!data || data.values.length === 0) return;
+
+            // 更新股票名称
+            document.getElementById('stock-code').innerText = data.stockCode;
+            document.getElementById('stock-name').innerText = data.stockName;
+
+            // 获取最新一条数据
+            const lastIdx = data.values.length - 1;
+            const lastValue = data.values[lastIdx]; // [open, close, low, high]
+            const lastVol = data.volumes[lastIdx][1];
+            
+            const open = lastValue[0];
+            const close = lastValue[1];
+            const low = lastValue[2];
+            const high = lastValue[3];
+            
+            // 计算涨跌
+            let prevClose = open; // 如果没有前一天数据，暂用开盘价代替
+            if (lastIdx > 0) {
+                prevClose = data.values[lastIdx - 1][1];
+            }
+            
+            const change = close - prevClose;
+            const pct = (change / prevClose) * 100;
+
+            // 辅助函数：根据数值设置颜色
+            const getColorClass = (val, base = 0) => {
+                if (val > base) return 'red';
+                if (val < base) return 'green';
+                return 'white';
+            };
+
+            // 更新 DOM
+            const elPrice = document.getElementById('info-price');
+            elPrice.innerText = close.toFixed(2);
+            elPrice.className = getColorClass(close, prevClose);
+
+            const elChange = document.getElementById('info-change');
+            elChange.innerText = change.toFixed(2);
+            elChange.className = getColorClass(change, 0);
+
+            const elPct = document.getElementById('info-pct');
+            elPct.innerText = pct.toFixed(2) + '%';
+            elPct.className = getColorClass(pct, 0);
+
+            const elOpen = document.getElementById('info-open');
+            elOpen.innerText = open.toFixed(2);
+            elOpen.className = getColorClass(open, prevClose);
+
+            const elHigh = document.getElementById('info-high');
+            elHigh.innerText = high.toFixed(2);
+            elHigh.className = getColorClass(high, prevClose);
+
+            const elLow = document.getElementById('info-low');
+            elLow.innerText = low.toFixed(2);
+            elLow.className = getColorClass(low, prevClose);
+
+            document.getElementById('info-vol').innerText = Math.round(lastVol / 100) + '手'; // 假设单位是股，转为手
+
+            // 模拟分时明细 (取最后几条日线数据模拟一下，虽然不准确)
+            const tickList = document.getElementById('tick-list');
+            tickList.innerHTML = '';
+            const count = Math.min(20, data.values.length);
+            for(let i=0; i<count; i++) {
+                const idx = data.values.length - 1 - i;
+                const row = document.createElement('div');
+                row.className = 'tick-row';
+                const time = data.categoryData[idx].slice(5); // MM/DD
+                const price = data.values[idx][1].toFixed(2);
+                const vol = Math.round(data.volumes[idx][1] / 100);
+                const color = data.values[idx][1] >= data.values[idx][0] ? 'red' : 'green';
+                
+                row.innerHTML = `
+                    <span>${time}</span>
+                    <span class="${color}">${price}</span>
+                    <span class="yellow">${vol}</span>
+                `;
+                tickList.appendChild(row);
+            }
+        }
+
+        function renderChart(data) {
+            if (!myChart) initChart();
+
+            const upColor = '#ff3333';
+            const upBorderColor = '#ff3333';
+            const downColor = '#00cc00';
+            const downBorderColor = '#00cc00';
+
+            const option = {
+                backgroundColor: '#000',
+                animation: false,
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross',
+                        label: {
+                            backgroundColor: '#333'
+                        }
+                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    borderColor: '#333',
+                    textStyle: {
+                        color: '#eee'
+                    }
+                },
+                legend: {
+                    data: ['日K', 'MA5', 'MA10', 'MA20', 'MA30'],
+                    textStyle: { color: '#999' },
+                    top: 5
+                },
+                grid: [
+                    {
+                        left: '50',
+                        right: '20',
+                        top: '30',
+                        height: '65%'
+                    },
+                    {
+                        left: '50',
+                        right: '20',
+                        top: '75%',
+                        height: '18%'
+                    }
+                ],
+                xAxis: [
+                    {
+                        type: 'category',
+                        data: data.categoryData,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { onZero: false, lineStyle: { color: '#333' } },
+                        splitLine: { show: true, lineStyle: { color: '#222' } },
+                        axisLabel: { color: '#999' },
+                        min: 'dataMin',
+                        max: 'dataMax'
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 1,
+                        data: data.categoryData,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { onZero: false, lineStyle: { color: '#333' } },
+                        axisTick: { show: false },
+                        splitLine: { show: true, lineStyle: { color: '#222' } },
+                        axisLabel: { show: false },
+                        min: 'dataMin',
+                        max: 'dataMax'
+                    }
+                ],
+                yAxis: [
+                    {
+                        scale: true,
+                        splitArea: { show: false },
+                        axisLine: { lineStyle: { color: '#333' } },
+                        splitLine: { show: true, lineStyle: { color: '#222' } },
+                        axisLabel: { color: '#999' }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 1,
+                        splitNumber: 2,
+                        axisLabel: { show: false },
+                        axisLine: { show: false },
+                        axisTick: { show: false },
+                        splitLine: { show: false }
+                    }
+                ],
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        xAxisIndex: [0, 1],
+                        start: 50,
+                        end: 100
+                    },
+                    {
+                        show: true,
+                        xAxisIndex: [0, 1],
+                        type: 'slider',
+                        bottom: 10,
+                        height: 20,
+                        start: 50,
+                        end: 100,
+                        borderColor: '#333',
+                        textStyle: { color: '#888' },
+                        handleStyle: { color: '#666' }
+                    }
+                ],
+                series: [
+                    {
+                        name: '日K',
+                        type: 'candlestick',
+                        data: data.values,
+                        itemStyle: {
+                            color: upColor,
+                            color0: downColor,
+                            borderColor: upBorderColor,
+                            borderColor0: downBorderColor
+                        },
+                        markPoint: {
+                            label: {
+                                color: '#fff'
+                            },
+                            data: [
+                                {
+                                    type: 'max',
+                                    valueDim: 'highest',
+                                    itemStyle: { color: '#aa0000' }
+                                },
+                                {
+                                    type: 'min',
+                                    valueDim: 'lowest',
+                                    itemStyle: { color: '#00aa00' }
+                                }
+                            ]
+                        },
+                        markLine: {
+                            symbol: ['none', 'none'],
+                            data: [
+                                { type: 'min', valueDim: 'close' },
+                                { type: 'max', valueDim: 'close' }
+                            ],
+                            lineStyle: { color: '#666', type: 'dashed' }
+                        }
+                    },
+                    {
+                        name: 'MA5',
+                        type: 'line',
+                        data: calculateMA(5, data),
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { opacity: 0.8, width: 1 }
+                    },
+                    {
+                        name: 'MA10',
+                        type: 'line',
+                        data: calculateMA(10, data),
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { opacity: 0.8, width: 1 }
+                    },
+                    {
+                        name: 'MA20',
+                        type: 'line',
+                        data: calculateMA(20, data),
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { opacity: 0.8, width: 1 }
+                    },
+                    {
+                        name: 'MA30',
+                        type: 'line',
+                        data: calculateMA(30, data),
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { opacity: 0.8, width: 1 }
+                    },
+                    {
+                        name: 'Volume',
+                        type: 'bar',
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        data: data.volumes,
+                        itemStyle: {
+                            color: function(params) {
+                                var sign = params.data[2];
+                                return sign > 0 ? upColor : downColor;
+                            }
+                        }
+                    }
+                ]
+            };
+
+            myChart.setOption(option);
+        }
+
+        initChart();
+    </script>
+</body>
+</html>
