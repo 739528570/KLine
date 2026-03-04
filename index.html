@@ -4,8 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>专业K线图表</title>
+    <!-- 解决 Electron 渲染进程中第三方库加载问题 -->
+    <script>
+        if (typeof module === 'object') {
+            window.module = module; 
+            module = undefined;
+        }
+    </script>
     <script src="./echarts.min.js"></script>
     <script src="./xlsx.full.min.js"></script>
+    <script>
+        if (window.module) module = window.module;
+        
+        // Electron 环境兼容性补丁：如果通过 script 标签加载失败，尝试使用 require 加载
+        if (typeof require === 'function') {
+            if (typeof echarts === 'undefined') {
+                try { window.echarts = require('./echarts.min.js'); } catch(e) { console.error('Failed to load echarts via require', e); }
+            }
+            if (typeof XLSX === 'undefined') {
+                try { window.XLSX = require('./xlsx.full.min.js'); } catch(e) { console.error('Failed to load XLSX via require', e); }
+            }
+        }
+    </script>
     <style>
         :root {
             --bg-color: #000000;
@@ -311,7 +331,58 @@
 
     <div id="loading" class="loading">正在处理数据...</div>
 
+    <!-- 拖拽提示层 -->
+    <div id="drop-zone" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; color: white; font-size: 24px; border: 4px dashed #666;">
+        释放文件以上传
+    </div>
+
     <script>
+        // 拖拽文件支持
+        const dropZone = document.getElementById('drop-zone');
+        let dragCounter = 0;
+
+        document.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter++;
+            dropZone.style.display = 'flex';
+        });
+
+        document.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropZone.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter = 0;
+            dropZone.style.display = 'none';
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    const input = document.getElementById('fileInput');
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    input.files = dataTransfer.files;
+                    handleFileUpload(input);
+                } else {
+                    alert('请上传 .xlsx 或 .xls 文件');
+                }
+            }
+        });
+
         let myChart = null;
         let rawData = null;
         let splitPercent = 70; // 初始分割位置百分比
@@ -402,7 +473,7 @@
                     updateSidebar(rawData);
                 } catch (error) {
                     console.error(error);
-                    alert('读取文件失败，请检查文件格式');
+                    alert('读取文件失败: ' + error.message);
                 } finally {
                     document.getElementById('loading').style.display = 'none';
                     input.value = '';
