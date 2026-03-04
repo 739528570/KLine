@@ -4,15 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>专业K线图表</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="./echarts.min.js"></script>
+    <script src="./xlsx.full.min.js"></script>
     <style>
         :root {
             --bg-color: #000000;
             --border-color: #333333;
             --text-color: #cccccc;
             --up-color: #ff3333;
-            --down-color: #00cc00;
+            --down-color: #54FCFC;
             --flat-color: #ffffff;
             --highlight-color: #ffff00;
             --header-bg: #111111;
@@ -330,7 +330,9 @@
                 tooltipText: '#eee',
                 splitBar: '#AAA',
                 upColor: '#ff3333',
-                downColor: '#00cc00'
+                downColor: '#54FCFC',
+                candleUpFill: '#000000',
+                candleDownFill: '#54FCFC'
             },
             light: {
                 bg: '#ffffff',
@@ -603,10 +605,10 @@
             const lineWidth = chartWidth - 70; // 50(left) + 20(right)
 
             const colors = themeColors[currentTheme];
-            const upColor = colors.upColor;
             const upBorderColor = colors.upColor;
-            const downColor = colors.downColor;
             const downBorderColor = colors.downColor;
+            const upColor = colors.candleUpFill || colors.upColor;
+            const downColor = colors.candleDownFill || colors.downColor;
 
             const maSeries = maPeriods.map(p => ({
                 name: 'MA' + p,
@@ -835,7 +837,7 @@
                         itemStyle: {
                             color: function(params) {
                                 var sign = params.data[2];
-                                return sign > 0 ? upColor : downColor;
+                                return sign > 0 ? colors.upColor : colors.downColor;
                             }
                         }
                     }
