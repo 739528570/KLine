@@ -227,6 +227,35 @@
             display: none;
             z-index: 1000;
         }
+
+        /* 悬浮信息区域样式 */
+        .hover-details {
+            padding: 5px;
+            min-height: 150px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+        }
+        
+        .hover-date {
+            color: var(--highlight-color);
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .hover-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+        
+        .hover-label {
+            color: #aaa;
+        }
+
+        /* 隐藏 ECharts 默认悬浮框，但保留 axisPointer */
+        .echarts-tooltip-hidden {
+            display: none !important;
+        }
         
         /* 滚动条样式 */
         ::-webkit-scrollbar {
@@ -317,6 +346,13 @@
                 <div class="info-row"><span class="order-label">换手</span><span class="white">--%</span></div>
                 <div class="info-row"><span class="order-label">净资</span><span class="white">--</span></div>
                 <div class="info-row"><span class="order-label">收益</span><span class="white">--</span></div>
+            </div>
+
+            <!-- 悬浮详情区 -->
+            <div class="sidebar-section hover-details" id="hover-details">
+                <div style="color: #666; text-align: center; padding: 20px 0;">
+                    鼠标悬停查看详情
+                </div>
             </div>
 
             <!-- 分时成交 (模拟) -->
@@ -669,6 +705,78 @@
             }
         }
 
+        // 更新侧边栏悬浮信息
+        function updateHoverPanel(params) {
+            const container = document.getElementById('hover-details');
+            if (!params || params.length === 0) return;
+
+            // 获取数据
+            const date = params[0].axisValue;
+            let html = `<div class="hover-date">${date}</div>`;
+
+            // 1. 处理 Volume
+            const volItem = params.find(item => item.seriesName === 'Volume');
+            if (volItem) {
+                const vol = Math.round(volItem.data[1]);
+                const volStr = vol.toLocaleString();
+                const sign = volItem.data[2];
+                // 使用主题颜色
+                const color = sign > 0 ? 'red' : 'green';
+                const labelColor = volItem.color; 
+                
+                html += `
+                    <div class="hover-item">
+                        <span style="color:${labelColor}">● Volume</span>
+                        <span class="${color}">${volStr}</span>
+                    </div>
+                `;
+            }
+
+            // 2. 处理 K线数据
+            const kItem = params.find(item => item.seriesName === '日K');
+            if (kItem) {
+                // ECharts Candlestick data index: 
+                // data[0]: Open
+                // data[1]: Close
+                // data[2]: Lowest
+                // data[3]: Highest
+                
+                const open = kItem.data[0];
+                const close = kItem.data[1];
+                const low = kItem.data[2];
+                const high = kItem.data[3];
+                
+                // 涨跌颜色：收盘 >= 开盘 ? 红 : 绿
+                const candleColor = close >= open ? 'red' : 'green';
+                
+                html += `
+                    <div style="height: 5px;"></div>
+                    <div class="hover-title">日K</div>
+                    <div class="hover-item"><span class="hover-label">open</span><span class="${candleColor}">${open.toFixed(2)}</span></div>
+                    <div class="hover-item"><span class="hover-label">close</span><span class="${candleColor}">${close.toFixed(2)}</span></div>
+                    <div class="hover-item"><span class="hover-label">lowest</span><span class="${candleColor}">${low.toFixed(2)}</span></div>
+                    <div class="hover-item"><span class="hover-label">highest</span><span class="${candleColor}">${high.toFixed(2)}</span></div>
+                `;
+            }
+
+            // 3. 处理 MA
+            html += `<div style="height: 5px;"></div>`;
+            params.forEach(item => {
+                if (item.seriesName.startsWith('MA')) {
+                    if (item.value !== '-' && !isNaN(item.value)) {
+                        html += `
+                            <div class="hover-item">
+                                <span style="color:${item.color}">● ${item.seriesName}</span>
+                                <span class="white">${Number(item.value).toFixed(3)}</span>
+                            </div>
+                        `;
+                    }
+                }
+            });
+
+            container.innerHTML = html;
+        }
+
         function renderChart(data) {
             if (!myChart) initChart();
             
@@ -707,10 +815,18 @@
                             backgroundColor: colors.tooltipBorder
                         }
                     },
-                    backgroundColor: colors.tooltipBg,
-                    borderColor: colors.tooltipBorder,
-                    textStyle: {
-                        color: colors.tooltipText
+                    backgroundColor: 'rgba(0,0,0,0)', // 透明背景
+                    borderColor: 'rgba(0,0,0,0)',     // 透明边框
+                    padding: 0,
+                    textStyle: { color: 'transparent' }, // 透明文字
+                    position: function (point, params, dom, rect, size) {
+                        // 固定位置到可视区域外，确保不遮挡
+                        return [-1000, -1000];
+                    },
+                    formatter: function (params) {
+                        // 更新侧边栏
+                        updateHoverPanel(params);
+                        return '';
                     }
                 },
                 legend: {
