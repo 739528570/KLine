@@ -798,6 +798,19 @@
                 lineStyle: { opacity: 0.8, width: 1 }
             }));
 
+            // 预处理成交量数据，直接在数据项中指定样式，确保边框颜色正确
+            const coloredVolumes = data.volumes.map(item => {
+                const sign = item[2];
+                return {
+                    value: item,
+                    itemStyle: {
+                        color: sign > 0 ? upColor : downColor,
+                        borderColor: sign > 0 ? upBorderColor : downBorderColor,
+                        borderWidth: 1
+                    }
+                };
+            });
+
             const option = {
                 backgroundColor: colors.bg,
                 animation: false,
@@ -1020,13 +1033,8 @@
                         type: 'bar',
                         xAxisIndex: 1,
                         yAxisIndex: 1,
-                        data: data.volumes,
-                        itemStyle: {
-                            color: function(params) {
-                                var sign = params.data[2];
-                                return sign > 0 ? colors.upColor : colors.downColor;
-                            }
-                        }
+                        data: coloredVolumes,
+                        // itemStyle: { ... } // 样式已内联到 data 中
                     }
                 ]
             };
